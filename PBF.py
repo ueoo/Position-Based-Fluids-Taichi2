@@ -1,13 +1,17 @@
 import math
+
 import numpy as np
 import taichi as ti
+
 from StaticRigidBody import StaticRigidBody
+
+
 @ti.data_oriented
-class Pbf():
+class Pbf:
     def __init__(self, k) -> None:
         # scale factor
-        self.k = k  # control self.boundry, num_particles_xyz and move board velocity strength
-        # config fulid grid
+        self.k = k  # control self.boundary, num_particles_xyz and move board velocity strength
+        # config fluid grid
         grid_res = (300, 140, 100)
         screen_to_world_ratio = 10.0
         self.boundary = (
@@ -17,20 +21,21 @@ class Pbf():
         )
         self.cell_size = 2.51
         self.cell_recpr = 1.0 / self.cell_size
+
         def round_up(f, s):
             return (math.floor(f * self.cell_recpr / s) + 1) * s
 
         self.grid_size = (round_up(self.boundary[0], 1), round_up(self.boundary[1], 1), round_up(self.boundary[2], 1))
 
         # config particles
-        self.dim = 3 # 3d pbf
+        self.dim = 3  # 3d pbf
         self.num_particles_x = 14 * self.k
         self.num_particles_y = 15 * self.k
         self.num_particles_z = 10 * self.k
         self.num_particles = self.num_particles_x * self.num_particles_y * self.num_particles_z
-        self.max_num_particles_per_cell = 100 # 3d
-        self.max_num_neighbors = 100 # 3d
-        self.time_delta = 1.0 / 60.0 
+        self.max_num_particles_per_cell = 100  # 3d
+        self.max_num_neighbors = 100  # 3d
+        self.time_delta = 1.0 / 60.0
         self.epsilon = 1e-5
         particle_radius = 3.0
         self.particle_radius_in_world = particle_radius / screen_to_world_ratio
@@ -77,9 +82,21 @@ class Pbf():
         self.primitive_indices = ti.field(int)
         self.particle_colors = ti.Vector.field(3, float)
 
-        ti.root.dense(ti.i, self.num_particles).place(self.old_positions, self.positions, self.velocities, self.omegas, self.vorticity_forces, \
-                                                      self.density, self.forces, self.rb_particle_collision_set, self.rb_particle_collision_idx_set, self.particle_colors,\
-                                                      self.sdf_negative_indices, self.sdf_negatives, self.primitive_indices)
+        ti.root.dense(ti.i, self.num_particles).place(
+            self.old_positions,
+            self.positions,
+            self.velocities,
+            self.omegas,
+            self.vorticity_forces,
+            self.density,
+            self.forces,
+            self.rb_particle_collision_set,
+            self.rb_particle_collision_idx_set,
+            self.particle_colors,
+            self.sdf_negative_indices,
+            self.sdf_negatives,
+            self.primitive_indices,
+        )
         grid_snode = ti.root.dense(ti.ijk, self.grid_size)
         grid_snode.place(self.grid_num_particles)
         grid_snode.dense(ti.l, self.max_num_particles_per_cell).place(self.grid2particles)
@@ -93,7 +110,7 @@ class Pbf():
         self.confirmed_rb_particle_collision_num[None] = 0
 
         self.colors = np.tile(
-            np.array([6.0/255.0,133.0/255.0,135.0/255.0], dtype=np.float32), (self.num_particles, 1)
+            np.array([6.0 / 255.0, 133.0 / 255.0, 135.0 / 255.0], dtype=np.float32), (self.num_particles, 1)
         )
 
         self.reset_color()
@@ -108,8 +125,8 @@ class Pbf():
     def init_particles(self):
         for i in range(self.num_particles):
             x = i % self.num_particles_x
-            y = i // (self.num_particles_x*self.num_particles_z)
-            z = (i % (self.num_particles_x*self.num_particles_z)) // self.num_particles_x
+            y = i // (self.num_particles_x * self.num_particles_z)
+            z = (i % (self.num_particles_x * self.num_particles_z)) // self.num_particles_x
             delta = self.h_ * 0.8
             offs = ti.Vector([(self.boundary[0] - delta * self.num_particles_x) * 0.95, 0, self.boundary[2] * 0.02])
             self.positions[i] = ti.Vector([x, y, z]) * delta + offs
@@ -117,14 +134,13 @@ class Pbf():
                 self.velocities[i][c] = (ti.random() - 0.5) * 4
         self.board_states[None] = ti.Vector([self.boundary[0] - self.epsilon, -0.0])
 
-
     @ti.kernel
     def move_board(self):
         # probably more accurate to exert force on particles according to hooke's law.
         b = self.board_states[None]
         b[1] += 1.0
         period = 200
-        vel_strength = 6.0 + 2*self.k
+        vel_strength = 6.0 + 2 * self.k
         if b[1] >= 2 * period:
             b[1] = 0
         b[0] += -ti.sin(b[1] * np.pi / period) * vel_strength * self.time_delta
@@ -144,7 +160,6 @@ class Pbf():
             result = self.poly6_factor * x * x * x
         return result
 
-
     @ti.func
     def spiky_gradient(self, r, h):
         result = ti.Vector([0.0, 0.0, 0.0])
@@ -154,7 +169,6 @@ class Pbf():
             g_factor = self.spiky_grad_factor * x * x
             result = r * g_factor / r_len
         return result
-
 
     @ti.func
     def compute_scorr(self, pos_ji):
@@ -172,12 +186,21 @@ class Pbf():
     @ti.func
     def is_in_grid(self, c):
         # @c: Vector(i32)
-        return 0 <= c[0] and c[0] < self.grid_size[0] and 0 <= c[1] and c[1] < self.grid_size[1] and 0 <= c[2] and c[2] < self.grid_size[2]
+        return (
+            0 <= c[0]
+            and c[0] < self.grid_size[0]
+            and 0 <= c[1]
+            and c[1] < self.grid_size[1]
+            and 0 <= c[2]
+            and c[2] < self.grid_size[2]
+        )
 
     @ti.func
     def confine_position_to_boundary(self, p):
         bmin = self.particle_radius_in_world
-        bmax = ti.Vector([self.board_states[None][0], self.boundary[1], self.boundary[2]]) - self.particle_radius_in_world
+        bmax = (
+            ti.Vector([self.board_states[None][0], self.boundary[1], self.boundary[2]]) - self.particle_radius_in_world
+        )
         for i in ti.static(range(self.dim)):
             # Use randomness to prevent particles from sticking into each other after clamping
             if p[i] <= bmin:
@@ -185,7 +208,7 @@ class Pbf():
             elif bmax[i] <= p[i]:
                 p[i] = bmax[i] - self.epsilon * ti.random()
         return p
-    
+
     @ti.func
     def compute_density(self):
         for p_i in self.positions:
@@ -208,7 +231,7 @@ class Pbf():
     def clear_forces(self):
         for i in self.forces:
             self.forces[i] *= 0.0
-    
+
     @ti.func
     def collect_set_of_potential_collided_particles_ti_v(self, grid_idx: ti.template(), accumulated_count: ti.int32):
         for idx in range(self.grid_num_particles[grid_idx]):
@@ -233,24 +256,24 @@ class Pbf():
     def collect_set_of_potential_collided_particles(self):
         self.rb_particle_collision_num[None] = 0
         counter = 0
-        # if True:    # To serialize loop 
+        # if True:    # To serialize loop
         for _ in range(1):
-            for I in range(self.rb.grid_AABB.shape[0]): 
+            for I in range(self.rb.grid_AABB.shape[0]):
                 grid_idx = self.rb.grid_AABB[I]
                 self.collect_set_of_potential_collided_particles_ti_v(grid_idx, counter)
                 grid_num = self.grid_num_particles[grid_idx[0], grid_idx[1], grid_idx[2]]
                 counter += grid_num
         self.rb_particle_collision_num[None] = counter
-    
+
     @ti.kernel
-    def apply_colision_forces_after_collision_detect(self):  
+    def apply_colision_forces_after_collision_detect(self):
         for i in range(self.confirmed_rb_particle_collision_num[None]):
             idx = self.sdf_negative_indices[i]
             p_idx = self.rb_particle_collision_idx_set[idx]
             dis_values = self.sdf_negatives[i]
-            collision_force = self.rb_fp_collision_stiffness * (- dis_values) * self.rb.faceN[self.primitive_indices[i]]
+            collision_force = self.rb_fp_collision_stiffness * (-dis_values) * self.rb.faceN[self.primitive_indices[i]]
             self.forces[p_idx] += collision_force
-    
+
     @ti.kernel
     def color_potential_particles(self):
         for i in range(self.rb_particle_collision_num[None]):
@@ -263,22 +286,22 @@ class Pbf():
         # self.color_potential_particles()
         if self.rb_particle_collision_num[None] == 0:
             return
-        potential_positions = self.rb_particle_collision_set.to_numpy()[:self.rb_particle_collision_num[None]]
+        potential_positions = self.rb_particle_collision_set.to_numpy()[: self.rb_particle_collision_num[None]]
         sdfs, primitive_indices = self.rb.get_sdf_prims_o3d(potential_positions)
         self.confirmed_rb_particle_collision_num[None] = np.count_nonzero(sdfs < 0)
         if self.confirmed_rb_particle_collision_num[None] == 0:
             return
-        
-        sdf_negative_indices_np = np.zeros(shape = (self.num_particles,), dtype = int)
-        sdf_negative_indices_np[:self.confirmed_rb_particle_collision_num[None]] = np.where(sdfs < 0)[0]
+
+        sdf_negative_indices_np = np.zeros(shape=(self.num_particles,), dtype=int)
+        sdf_negative_indices_np[: self.confirmed_rb_particle_collision_num[None]] = np.where(sdfs < 0)[0]
         self.sdf_negative_indices.from_numpy(sdf_negative_indices_np)
 
-        sdf_negative_np = np.zeros(shape = (self.num_particles, ), dtype = np.float32)
-        sdf_negative_np[:self.confirmed_rb_particle_collision_num[None]] = sdfs[np.where(sdfs < 0)]
+        sdf_negative_np = np.zeros(shape=(self.num_particles,), dtype=np.float32)
+        sdf_negative_np[: self.confirmed_rb_particle_collision_num[None]] = sdfs[np.where(sdfs < 0)]
         self.sdf_negatives.from_numpy(sdf_negative_np)
 
-        primitive_indices_np = np.zeros(shape = (self.num_particles, ), dtype = int)
-        primitive_indices_np[:self.confirmed_rb_particle_collision_num[None]] = primitive_indices[np.where(sdfs < 0)]
+        primitive_indices_np = np.zeros(shape=(self.num_particles,), dtype=int)
+        primitive_indices_np[: self.confirmed_rb_particle_collision_num[None]] = primitive_indices[np.where(sdfs < 0)]
         self.primitive_indices.from_numpy(primitive_indices_np)
 
         self.apply_colision_forces_after_collision_detect()
@@ -326,12 +349,16 @@ class Pbf():
                 if self.is_in_grid(cell_to_check):
                     for j in range(self.grid_num_particles[cell_to_check]):
                         p_j = self.grid2particles[cell_to_check, j]
-                        if nb_i < self.max_num_neighbors and p_j != p_i and (pos_i - self.positions[p_j]).norm() < self.neighbor_radius:
+                        if (
+                            nb_i < self.max_num_neighbors
+                            and p_j != p_i
+                            and (pos_i - self.positions[p_j]).norm() < self.neighbor_radius
+                        ):
                             self.particle_neighbors[p_i, nb_i] = p_j
                             nb_i += 1
             self.particle_num_neighbors[p_i] = nb_i
 
-    ## add visualization for 
+    ## add visualization for
     def prologue(self):
         self.prologue_part1()
         if self.rb != None:
@@ -340,7 +367,9 @@ class Pbf():
         self.prologue_part2()
 
     @ti.kernel
-    def substep(self,):
+    def substep(
+        self,
+    ):
         # compute lambdas
         # Eq (8) ~ (11)
         for p_i in self.positions:
@@ -388,7 +417,6 @@ class Pbf():
         for i in self.positions:
             self.positions[i] += self.position_deltas[i]
 
-
     @ti.kernel
     def epilogue(self):
         # confine to boundary
@@ -411,7 +439,11 @@ class Pbf():
                 if p_j < 0:
                     break
                 pos_ji = pos_i - self.positions[p_j]
-                self.omegas[i] += self.mass * (self.velocities[p_j] - self.velocities[i]).cross(self.spiky_gradient(pos_ji, self.h_)) / (self.epsilon + self.density[p_j])
+                self.omegas[i] += (
+                    self.mass
+                    * (self.velocities[p_j] - self.velocities[i]).cross(self.spiky_gradient(pos_ji, self.h_))
+                    / (self.epsilon + self.density[p_j])
+                )
         # calculate vorticity force
         for i in self.positions:
             pos_i = self.positions[i]
@@ -422,7 +454,12 @@ class Pbf():
                 if p_j < 0:
                     break
                 pos_ji = pos_i - self.positions[p_j]
-                eta += self.mass * self.omegas[j].norm() * self.spiky_gradient(pos_ji, self.h_) / (self.epsilon + self.density[p_j])
+                eta += (
+                    self.mass
+                    * self.omegas[j].norm()
+                    * self.spiky_gradient(pos_ji, self.h_)
+                    / (self.epsilon + self.density[p_j])
+                )
             location_vector = eta / (self.epsilon + eta.norm())
             self.vorticity_forces[i] += 0.5 * (location_vector.cross(self.omegas[i]))
 
@@ -439,7 +476,12 @@ class Pbf():
                 if p_j < 0:
                     break
                 pos_ji = pos_i - self.positions[p_j]
-                self.velocities_deltas[i] += self.mass * (self.velocities[p_j] - self.velocities[i]) * self.poly6_value(pos_ji.norm(), self.h_) / (self.epsilon + self.density[p_j])
-        
+                self.velocities_deltas[i] += (
+                    self.mass
+                    * (self.velocities[p_j] - self.velocities[i])
+                    * self.poly6_value(pos_ji.norm(), self.h_)
+                    / (self.epsilon + self.density[p_j])
+                )
+
         for i in self.positions:
-            self.velocities[i] += 0.1 * self.velocities_deltas[i]   # note: 0.1 is xsph constant, 0.01 in the paper
+            self.velocities[i] += 0.1 * self.velocities_deltas[i]  # note: 0.1 is xsph constant, 0.01 in the paper
